@@ -1,0 +1,18 @@
+{
+    "main-window": {
+    "caption": "yet another Text Editor",
+       "height": "600",
+       "position-x": "100",
+       "position-y": "100",
+       "width": "800"
+    },
+    "application": {
+       "theme": "Light style",
+       "syntax-theme": "Light style",
+       "settings-file": "yate-settings.json",
+       "font-family": "Courier New",
+       "syntax-font-family": "Courier New",
+       "test-list":["awesome","best","good"]
+    }
+ }
+ 
