@@ -24,7 +24,7 @@ public:
 
 protected:
     void resizeEvent(QResizeEvent *event) override;
-  //  void wheelEvent(QWheelEvent *event) override;
+    void wheelEvent(QWheelEvent *event) override;
     void keyPressEvent(QKeyEvent *event) override;
  //   void mousePressEvent(QMouseEvent *e) override;
 
@@ -34,7 +34,7 @@ private slots:
     void updateLineNumberArea(const QRect &rect, int dy);
 
     void seekAndConvert(qint64 fromGlobalPos, qint64 size);
-    void replaceTextBlock(QString newTextBlock, qint64 loadedFromPos, qint64 sizeLoaded);
+    void replaceTextBlock(const QString &newTextBlock, qint64 loadedFromPos, qint64 sizeLoaded);
     void scrollContent(int verticalSBvalue, bool cursorMoved = false);
     void syncScrollBars(int verticalSBvalue);
     void syncCursor();
@@ -48,14 +48,12 @@ private:
     QWidget *lineNumberAreaHex;
     qint32 cursorAtBlockNum;
     QFile file;
-    qint32 sizeOfFragment;          // размер выводимого фрагмента файла
+    qint64 sizeOfFragment;          // размер выводимого фрагмента файла
     qint32 globalLinesCount;        // общее количество строк в выводимом файле
     qint64 currentLine;
     qint64 firstLineNumberLoaded;
     qint64 lastLineNumberLoaded;
     bool dontScroll;
-
-    //QSharedPointer<SeekAndConvert>  getNewTextBlock;
 
     QScrollBar *newVertScrollBar;
     qint32 rowsOnScreen();

@@ -22,7 +22,7 @@ public:
     void save(const QString &textToSave);
     bool save(const QString &pathFile, const QString &textToSave);
     bool loadFile(const QString &fileName);
-    QByteArray getTextFragment(QFile &fl, qint64 fromGlobalPos, qint64 size);
+    QByteArray getTextFragment(qint64 fromGlobalPos, qint64 size);
     QString getTextAll();
     quint64 getFileSize();
     QFile &getFile();
