@@ -2,17 +2,17 @@
 #include <QDebug>
 
 
-HexEdit::HexEdit(Appearance *appearance, Buffer *buffer) :  m_buffer(buffer), m_appearance(appearance)
+HexEdit::HexEdit(Appearance *appearance, Buffer *buffer) : m_buffer(buffer), m_appearance(appearance)
 {
     lineNumberAreaHex = new LineNumberAreaHex(this);
     sizeOfFragment = 200;  // количество строк загружаемого фрагмента
     firstLineNumberLoaded = 0;
     lastLineNumberLoaded = 0;
     currentLine = 1;
-    //setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-    newVertScrollBar = new QScrollBar(this);
+   // setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff); // range default скроллбара - фрагмент
+    newVertScrollBar = new QScrollBar(this); // range этого нового скроллбара - весь файл
     newVertScrollBar->setEnabled(false);
-       connect(this, &HexEdit::blockCountChanged, this, &HexEdit::updateLineNumberAreaWidth);
+    connect(this, &HexEdit::blockCountChanged, this, &HexEdit::updateLineNumberAreaWidth);
     connect(this, &HexEdit::updateRequest, this, &HexEdit::updateLineNumberArea);
     connect(this, &HexEdit::cursorPositionChanged, this, &HexEdit::highlightCurrentLine);
 
@@ -21,21 +21,25 @@ HexEdit::HexEdit(Appearance *appearance, Buffer *buffer) :  m_buffer(buffer), m_
     connect(verticalScrollBar(), &QScrollBar::valueChanged, this, &HexEdit::syncScrollBars);
 
     connect(this, &HexEdit::cursorPositionChanged, this, &HexEdit::syncCursor);
-    connect(m_buffer, &Buffer::openFile, this, &HexEdit::loadFile);
-       //connect(m_buffer, SIGNAL(saveFile(QString)), this, SLOT(saveFile(const QString &)));
-       connect(m_buffer, &Buffer::errorWithFile, this, &HexEdit::showErrorMsg);
     setFont(QFont("Courier", 10));
     setOverwriteMode(true);
     updateLineNumberAreaWidth(0);
     highlightCurrentLine();
-    openFile("d:/GeekBrains/blackjack.o");
-   // setReadOnly(true);
+
+    setAttribute(Qt::WA_DeleteOnClose);
+
+   // connect(m_buffer, &Buffer::createFile, this, &HexEdit::newFile);
+    connect(m_buffer, &Buffer::openFile, this, &HexEdit::loadFile);
+    //connect(m_buffer, SIGNAL(saveFile(QString)), this, SLOT(saveFile(const QString &)));
+    connect(m_buffer, &Buffer::errorWithFile, this, &HexEdit::showErrorMsg);
+    setReadOnly(true);
     if (!m_buffer->pathFile().isEmpty()) { m_buffer->setPathFile(m_buffer->pathFile()); }
+
 }
 
 HexEdit::~HexEdit()
 {
-
+    emit deleteBuffer(m_buffer);
 }
 
 int HexEdit::lineNumberAreaWidth()
@@ -46,41 +50,13 @@ int HexEdit::lineNumberAreaWidth()
         max /= 10;
         ++digits;
     }
-
     int space = 50 + fontMetrics().horizontalAdvance(QLatin1Char('9')) * digits;
-
     return space;
 }
 
 Buffer *HexEdit::buffer() const
 {
     return m_buffer;
-}
-
-void HexEdit::setFilePath(QString filePath)
-{
-    if (filePath != "") {
-        openFile(filePath);
-    }
-}
-
-void HexEdit::openFile(QString pathFileName)
-{
-
-    file.setFileName(pathFileName);
-    if(file.open(QFile::ReadOnly | QFile::ExistingOnly)){
-        globalLinesCount = file.size() / 16;
-        qDebug() << "File read - ok";
-        qDebug() << "Size of file: " << file.size();
-        qDebug() << "Lines in file: " << globalLinesCount;
-        seekAndConvert(0, sizeOfFragment);
-        newVertScrollBar->setRange(0, globalLinesCount);
-        newVertScrollBar->setEnabled(true);
-        currentLine = 1;
-
-    }
-
-
 }
 
 void HexEdit::updateLineNumberAreaWidth(int /* newBlockCount */)
@@ -98,20 +74,13 @@ void HexEdit::updateLineNumberArea(const QRect &rect, int dy)
         updateLineNumberAreaWidth(0);
 }
 
-void HexEdit::seekAndConvert(qint64 fromGlobalPos, qint64 sizeToRead)
+void HexEdit::seekAndConvert(qint64 fromGlobalPos, qint64 size)
 {
-   // m_buffer->getFile().seek(fromGlobalPos * 16);
-   // QByteArray dataIn = m_buffer->getFile().read(sizeToRead * 16);
-    //file.seek(fromGlobalPos * 16);
-  // QByteArray dataIn = file.read(sizeToRead * 16);
-  //  qDebug() << dataIn;
-   // qDebug() << dataIn.size();
-
-    QByteArray dataIn =  m_buffer->getTextFragment(file, fromGlobalPos, sizeToRead);
-   QString out;
-    for (int i = 0,k = 0; i < dataIn.size(); i += 16, ++k)
+    QByteArray dataIn = m_buffer->getTextFragment(fromGlobalPos, size);
+    qDebug() << "size:" << dataIn.size();
+    QString result;
+    for (int i = 0, k = 0; i < dataIn.size(); i += 16, ++k)
     {
-
         QString hexStr;
         QString ascStr;
         for (int j=0; j<16; j++)
@@ -120,56 +89,45 @@ void HexEdit::seekAndConvert(qint64 fromGlobalPos, qint64 sizeToRead)
             {
                 hexStr.append(" ").append(dataIn.mid(i + j, 1).toHex());
                 char ch = dataIn[i + j];
-                if ((ch < 0x20) || (ch > 0x7e))
-                    ch = '.';
+                if ((ch < 0x20) || (ch > 0x7e)){ ch = '.'; }
                 ascStr.append(QChar(ch));
             }
         }
-        out.append(QString("%1").arg(hexStr)+  "       " + QString("%1").arg(ascStr) + "\n");
-
+        result.append(QString("%1").arg(hexStr)+  "       " + QString("%1").arg(ascStr) + "\n");
     }
-
-
-    replaceTextBlock(out, fromGlobalPos, (dataIn.size() % 16 == 0 ? dataIn.size() / 16 : dataIn.size() / 16 + 1));
+    result.chop(2);
+    replaceTextBlock(result, fromGlobalPos, size);
 }
 
-void HexEdit::replaceTextBlock(QString newTextBlock, qint64 loadedFromPos, qint64 sizeLoaded)
+void HexEdit::replaceTextBlock(const QString &newTextBlock, qint64 loadedFromPos, qint64 sizeLoaded)
 {
     firstLineNumberLoaded = loadedFromPos;
     lastLineNumberLoaded = loadedFromPos + sizeLoaded;
     setPlainText(newTextBlock);
-    dontScroll=true;
-    //verticalScrollBar()->setValue(loadedFromPos-firstLineNumberLoaded);
-    verticalScrollBar()->setValue(0);
-    dontScroll=false;
-
 }
 
 void HexEdit::scrollContent(int verticalSBvalue, bool cursorMoved)
 {
-//    if(verticalSBvalue % 16 != 0){
-//        verticalSBvalue -= verticalSBvalue % 16;
-//    }
     QString tmp;
-    qDebug() << "verticalScrollBar:" + tmp.setNum(verticalSBvalue);
+   // qDebug() << "verticalScrollBar:" + tmp.setNum(verticalSBvalue);
 
     if(!dontScroll){
-        if((verticalSBvalue >= firstLineNumberLoaded) && (verticalSBvalue <= lastLineNumberLoaded) )
+        if((verticalSBvalue > firstLineNumberLoaded) && (verticalSBvalue <= lastLineNumberLoaded - rowsOnScreen()) )
         {
             verticalScrollBar()->setValue(verticalSBvalue-firstLineNumberLoaded);
         } else {
             seekAndConvert(verticalSBvalue, sizeOfFragment);
         }
     }
-    if(cursorMoved)
-       {
-            const QTextBlock &block = document()->findBlockByNumber(verticalScrollBar()->value());
-             QTextCursor cursor(block);
-             cursor.movePosition(QTextCursor::Right, QTextCursor::MoveAnchor, 0);
-             setTextCursor(cursor);
-             centerCursor();
-             setFocus();
-       }
+//    if(cursorMoved)
+//       {
+//            const QTextBlock &block = document()->findBlockByNumber(verticalScrollBar()->value());
+//             QTextCursor cursor(block);
+//             cursor.movePosition(QTextCursor::Right, QTextCursor::MoveAnchor, 0);
+//             setTextCursor(cursor);
+//             centerCursor();
+//             setFocus();
+//       }
 
 }
 
@@ -178,7 +136,9 @@ void HexEdit::syncScrollBars(int verticalSBvalue)
     newVertScrollBar->blockSignals(true);
     newVertScrollBar->setValue(firstLineNumberLoaded+verticalSBvalue);
     QString tmp;
-    qDebug() << "newVertScrollbarr:" + tmp.setNum(firstLineNumberLoaded + verticalSBvalue);
+   // qDebug() << "newVertScrollbarr:" + tmp.setNum(firstLineNumberLoaded + verticalSBvalue);
+   // qDebug() << "VertSbValue:" + tmp.setNum(verticalSBvalue);
+
     newVertScrollBar->blockSignals(false);
 }
 
@@ -195,19 +155,21 @@ void HexEdit::showErrorMsg(const QString &err)
 void HexEdit::loadFile()
 {
     globalLinesCount = (m_buffer->getFileSize() % 16 == 0) ? m_buffer->getFileSize() / 16 : m_buffer->getFileSize() / 16 + 1;
-     qDebug() << "File read - ok";
-     qDebug() << "Size of file: " << m_buffer->getFileSize() ;
-     qDebug() << "Lines in file: " << globalLinesCount;
-     seekAndConvert(0, sizeOfFragment);
-     newVertScrollBar->setRange(0, globalLinesCount);
-     newVertScrollBar->setEnabled(true);
-     currentLine = 1;
-     document()->setModified(false);
-     setWindowModified(false);
-     setWindowTitle(m_buffer->fileName() + "[*]");
-     //connect(document(), &QTextDocument::contentsChanged,
-     //        this, &HexEdit::documentWasModified);
+    qDebug() << "File read - ok";
+    qDebug() << "Size of file: " << m_buffer->getFileSize() ;
+    qDebug() << "Lines in file: " << globalLinesCount;
+    seekAndConvert(0, sizeOfFragment);
+    newVertScrollBar->setRange(0, globalLinesCount);
+    newVertScrollBar->setEnabled(true);
+    currentLine = 1;
+    document()->setModified(false);
+    setWindowModified(false);
+    setWindowTitle(m_buffer->fileName() + "[*]");
+    //connect(document(), &QTextDocument::contentsChanged,
+    //        this, &HexEdit::documentWasModified);
 }
+
+
 
 qint32 HexEdit::rowsOnScreen()
 {
@@ -218,7 +180,6 @@ qint32 HexEdit::rowsOnScreen()
 
     while (block.isValid() && block.isVisible() && top <= rect().bottom())
     {
-
         block = block.next();
         top = bottom;
         bottom = top + (int) blockBoundingRect(block).height();
@@ -233,16 +194,29 @@ void HexEdit::resizeEvent(QResizeEvent *e)
 
     QRect cr = contentsRect();
     lineNumberAreaHex->setGeometry(QRect(cr.left(), cr.top(), lineNumberAreaWidth(), cr.height()));
-    newVertScrollBar->setGeometry(QRect(cr.width()-40, cr.top(), 20, cr.height()));
+    newVertScrollBar->setGeometry(QRect(cr.width()-50, cr.top(), 20, cr.height()));
 }
 
-//void HexEdit::wheelEvent(QWheelEvent *event)
-//{
-//    if (event->orientation() == Qt::Vertical)
-//    {
-//         QApplication::sendEvent ( verticalScrollBar(),  event );
-//    }
-//}
+void HexEdit::wheelEvent(QWheelEvent *event)
+{
+    QPoint numPixels = event->pixelDelta();
+    QPoint numDegrees = event->angleDelta() / 8;
+    qDebug() << "newvertSB:" << newVertScrollBar->value();
+    if (!numPixels.isNull()) {
+       // newVertScrollBar->setValue(newVertScrollBar->value() + numPixels);
+    } else if (!numDegrees.isNull()) {
+        if (numDegrees.y() < 0) { scrollContent(newVertScrollBar->value() + 1);  qDebug() << numDegrees;}
+        else {
+            newVertScrollBar->setValue(newVertScrollBar->value() - 1);
+            scrollContent(newVertScrollBar->value());  qDebug() << numDegrees;
+        }
+       // QApplication::sendEvent (this,  &QKeyEvent(QEvent::KeyPress, Qt::Key_Up, Qt::NoModifier)   );
+        // QPoint numSteps = numDegrees / 15;
+        //verticalScrollBar()->setValue(verticalScrollBar()->value() - numSteps.y());
+    }
+
+    event->accept();
+}
 
 void HexEdit::keyPressEvent(QKeyEvent *event)
 {
@@ -259,43 +233,35 @@ void HexEdit::keyPressEvent(QKeyEvent *event)
         case Qt::Key_PageDown :
         case QKeySequence::MoveToNextPage:
          //   currentLine += textCursor().blockNumber()
-            newPos=currentLine+rowsOnScreen();
+            newPos=newVertScrollBar->value()+rowsOnScreen();
             newVertScrollBar->setValue(newPos);
             scrollContent(newPos,true);
             break;
         case Qt::Key_Up :
-          //  currentLine--;
-
-            qDebug() << tmp.setNum(currentLine);
-            if((firstLineNumberLoaded != 0)&&(currentLine <= firstLineNumberLoaded + rowsOnScreen())){
-                QTextCursor cursor(this->textCursor());
-                const QTextBlock &block = firstVisibleBlock();
-                seekAndConvert(currentLine - sizeOfFragment + rowsOnScreen(), sizeOfFragment);
-                for (int i = 0; i < sizeOfFragment; ++i) cursor.movePosition(QTextCursor::Down);
-                setTextCursor(cursor);
-                for (int i = 0; i < rowsOnScreen() + 3; ++i) cursor.movePosition(QTextCursor::Up);
-                setTextCursor(cursor);
-                break;
+            if (newVertScrollBar->value() > 0 && verticalScrollBar()->value() == 0){
+                //                newVertScrollBar->setValue(newVertScrollBar->value() - 1);
+                //                scrollContent(newVertScrollBar->value());
+                if (newVertScrollBar->value() < sizeOfFragment) {
+                    //seekAndConvert(0, sizeOfFragment);
+                    verticalScrollBar()->setValue(newVertScrollBar->value());
+                }
+                else {
+                    seekAndConvert( newVertScrollBar->value() - sizeOfFragment + rowsOnScreen() - 2, sizeOfFragment);
+                    verticalScrollBar()->setValue(newVertScrollBar->value());
+                }
             }
             QPlainTextEdit::keyPressEvent(event);
             break;
         case Qt::Key_Down :
-            //currentLine++;
 
-            qDebug() << tmp.setNum(currentLine);
-            if(currentLine >= lastLineNumberLoaded - rowsOnScreen()){
-                QTextCursor cursor(this->textCursor());
-                const QTextBlock &block = firstVisibleBlock();
-                qint32 cursorPos = cursor.position() - block.position();
-                seekAndConvert(currentLine - rowsOnScreen() +1, sizeOfFragment);
-             //   verticalScrollBar()->setValue(rowsOnScreen());
-                cursor.setPosition(cursorPos);
-                setTextCursor(cursor);
-                break;
+            if (verticalScrollBar()->value() > sizeOfFragment - rowsOnScreen() - 1){
+                seekAndConvert(newVertScrollBar->value() + 1, sizeOfFragment);
+            } else {
+                QPlainTextEdit::keyPressEvent(event);
             }
-
+            break;
         default:
-            QPlainTextEdit::keyPressEvent(event);
+            //QPlainTextEdit::keyPressEvent(event);
             break;
         }
         event->accept();
@@ -313,8 +279,12 @@ void HexEdit::highlightCurrentLine()
 
     if (!isReadOnly()) {
         QTextEdit::ExtraSelection selection;
-
-        QColor lineColor = QColor(Qt::yellow).lighter(180);
+        QColor lineColor;
+        if(m_appearance->getStyleName() == "Light style"){
+            lineColor = QColor(Qt::yellow).lighter(180);
+        }else if(m_appearance->getStyleName() == "Dark style"){
+            lineColor = QColor(Qt::gray).lighter(80);
+        }
 
         selection.format.setBackground(lineColor);
         selection.format.setProperty(QTextFormat::FullWidthSelection, true);
@@ -337,7 +307,7 @@ void HexEdit::lineNumberAreaPaintEvent(QPaintEvent *event)
     int bottom = top + qRound(blockBoundingRect(block).height());
     while (block.isValid() && top <= event->rect().bottom()) {
         if (block.isVisible() && bottom >= event->rect().top()) {
-            QString number = QString("%4").toUpper().arg(QString::number(blockNumber, 16), 4, QLatin1Char('0')) + "0h:";
+            QString number = QString("%4").toUpper().arg(QString::number(blockNumber, 10), 4, QLatin1Char('0')) + "0h:";
             painter.setPen(Qt::black);
             painter.drawText(0, top, lineNumberAreaHex->width(), fontMetrics().height(),
                              Qt::AlignRight, number);

@@ -78,11 +78,11 @@ QString Buffer::getTextAll()
     return file.readAll();
 }
 
-QByteArray Buffer::getTextFragment(QFile &fl, qint64 fromGlobalPos, qint64 size)
+QByteArray Buffer::getTextFragment(qint64 fromGlobalPos, qint64 size)
 {
-    fl.seek(fromGlobalPos * 16);
+    file.seek(fromGlobalPos * 16);
 
-    return fl.read(size * 16);;
+    return file.read(size * 16);;
 }
 
 bool Buffer::loadFile(const QString &fileName)
